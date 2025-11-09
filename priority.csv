@@ -1,0 +1,5 @@
+# pid,arrival,burst,priority
+L1,0,10,3
+H1,2,2,0
+M1,3,3,2
+H2,5,1,0
