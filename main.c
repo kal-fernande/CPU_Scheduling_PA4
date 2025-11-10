@@ -3,10 +3,26 @@
 #include <stdlib.h>
 #include "cmdparser.h"         // your CLI: parse_arguments, print_usage, scheduler_t
 #include "scheduler_wiring.h"  // run_scheduler(...) + proc_t typedef
+#include "metrics.h"
+#include <string.h>
 
 // If you already have a CSV loader, declare it here and link it.
 // Expected signature:
 int load_csv(const char *path, proc_t **out_procs, int *out_nprocs);
+
+// Initialize fields expected by the scheduler core
+static void init_proc_fields(proc_t *procs, int n) {
+    for (int i = 0; i < n; ++i) {
+        procs[i].remaining     = procs[i].burst;
+        procs[i].started_time  = -1;
+        procs[i].finish_time   = -1;
+        procs[i].response_time = 0;
+        procs[i].waiting_time  = 0;
+        procs[i].admitted      = false;
+        procs[i].done          = false;
+        // run_sem is initialized in proc_sems_init() inside scheduler_wiring.c
+    }
+}
 
 int main(int argc, char **argv) {
     // 1) Parse CLI
@@ -29,20 +45,23 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    init_proc_fields(procs, nprocs);
+
     // 3) Run the scheduler loop (spawns threads, uses semaphores, returns makespan/timeline)
     int *timeline = NULL, tl_len = 0;
     int makespan = run_scheduler(procs, nprocs, opts.scheduler, opts.quantum, &timeline, &tl_len);
 
-    // 4) (Optional) minimal results printing — keep or replace with your friend's output code
-    //    All per-process metrics are in procs[i].started_time / finish_time / waiting_time / response_time.
+    // 4) Metrics & output
+    const char *algname =
+        (opts.scheduler == SCHED_FCFS)     ? "FCFS" :
+        (opts.scheduler == SCHED_SJF)      ? "SJF" :
+        (opts.scheduler == SCHED_RR)       ? "RR" :
+        (opts.scheduler == SCHED_PRIORITY) ? "PRIORITY" : "UNKNOWN";
+    printf("\n===== %s Scheduling =====\n", algname);
     printf("Finished in %d ticks. Processes: %d\n", makespan, nprocs);
-    // for (int i = 0; i < nprocs; ++i) {
-    //     int turn = procs[i].finish_time - procs[i].arrival;
-    //     printf("%s: start=%d finish=%d wait=%d resp=%d turn=%d\n",
-    //         procs[i].pid, procs[i].started_time, procs[i].finish_time,
-    //         procs[i].waiting_time, procs[i].response_time, turn);
-    // }
 
+    (void)compute_and_print_metrics(procs, nprocs, makespan, timeline, tl_len);
+    
     // 5) Cleanup
     free(timeline);
     free(procs);
